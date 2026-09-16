@@ -1,0 +1,52 @@
+# ── Dependencies ────────────────────────────────────────────────────────────
+node_modules/
+.pnp
+.pnp.js
+
+# ── Build output ────────────────────────────────────────────────────────────
+dist/
+build/
+*.tsbuildinfo
+.vite/
+
+# Vite writes a temp copy of the config while it is running.
+vite.config.*.timestamp-*
+
+# ── Runtime state (in-memory store snapshots) ───────────────────────────────
+# The JSON snapshot lets the zero-install demo mode survive restarts.
+# Keep the folder, ignore its contents.
+server/data/*
+!server/data/.gitkeep
+
+# ── Environment ─────────────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# ── Logs ────────────────────────────────────────────────────────────────────
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ── Editors / OS ────────────────────────────────────────────────────────────
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Test / coverage ─────────────────────────────────────────────────────────
+coverage/
+.nyc_output/
+
+# ── Misc ────────────────────────────────────────────────────────────────────
+.cache/
+tmp/
+temp/

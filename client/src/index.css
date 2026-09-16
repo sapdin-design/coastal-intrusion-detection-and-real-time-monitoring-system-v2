@@ -1,0 +1,269 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ══════════════════════════════════════════════════════════════════════════
+   CIDRTM design system
+   A security-operations look: dense but calm, one accent colour, status colour
+   reserved exclusively for meaning (never decoration).
+   ══════════════════════════════════════════════════════════════════════════ */
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  * {
+    @apply border-slate-200;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-slate-100 text-slate-800 antialiased;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'tnum';
+  }
+
+  /* Numeric columns stay aligned in tables and KPI tiles. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+
+  ::-webkit-scrollbar {
+    width: 9px;
+    height: 9px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-slate-300;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-slate-400;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-brand-500/40 ring-offset-1;
+  }
+}
+
+@layer components {
+  /* ── Surfaces ──────────────────────────────────────────────────────── */
+  .card {
+    @apply rounded-xl border border-slate-200 bg-white shadow-card;
+  }
+
+  .card-header {
+    @apply flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3;
+  }
+
+  .card-title {
+    @apply text-[13px] font-semibold uppercase tracking-wide text-slate-500;
+  }
+
+  .panel-scroll {
+    @apply overflow-y-auto overscroll-contain;
+  }
+
+  /* ── Buttons ───────────────────────────────────────────────────────── */
+  .btn {
+    @apply inline-flex select-none items-center justify-center gap-1.5 whitespace-nowrap rounded-lg
+           px-3 py-2 text-sm font-medium transition-colors duration-150
+           disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply btn bg-brand-700 text-white hover:bg-brand-800 active:bg-brand-900;
+  }
+  .btn-secondary {
+    @apply btn border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 active:bg-slate-100;
+  }
+  .btn-ghost {
+    @apply btn text-slate-600 hover:bg-slate-100 hover:text-slate-900;
+  }
+  .btn-danger {
+    @apply btn bg-rose-600 text-white hover:bg-rose-700 active:bg-rose-800;
+  }
+  .btn-success {
+    @apply btn bg-emerald-600 text-white hover:bg-emerald-700 active:bg-emerald-800;
+  }
+  .btn-xs {
+    @apply px-2 py-1 text-xs;
+  }
+  .btn-sm {
+    @apply px-2.5 py-1.5 text-[13px];
+  }
+
+  /* ── Forms ─────────────────────────────────────────────────────────── */
+  .field-label {
+    @apply mb-1.5 block text-[13px] font-medium text-slate-700;
+  }
+  .field-input {
+    @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900
+           placeholder:text-slate-400 transition
+           focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/25
+           disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500;
+  }
+  .field-error {
+    @apply mt-1 flex items-center gap-1 text-xs font-medium text-rose-600;
+  }
+  .field-hint {
+    @apply mt-1 text-xs text-slate-500;
+  }
+
+  /* ── Tables ────────────────────────────────────────────────────────── */
+  .data-table {
+    @apply w-full border-collapse text-sm;
+  }
+  .data-table thead th {
+    @apply sticky top-0 z-10 whitespace-nowrap border-b border-slate-200 bg-slate-50/95
+           px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500
+           backdrop-blur;
+  }
+  .data-table tbody td {
+    @apply border-b border-slate-100 px-3 py-2.5 align-middle text-slate-700;
+  }
+  .data-table tbody tr {
+    @apply transition-colors hover:bg-slate-50/80;
+  }
+  .data-table tbody tr:last-child td {
+    @apply border-b-0;
+  }
+
+  /* ── Status chips ──────────────────────────────────────────────────── */
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide;
+  }
+
+  .kpi-value {
+    @apply tnum text-2xl font-semibold leading-none tracking-tight text-slate-900;
+  }
+
+  /* ── Map legend swatch ─────────────────────────────────────────────── */
+  .legend-dot {
+    @apply inline-block h-2.5 w-2.5 shrink-0 rounded-full ring-2 ring-white;
+  }
+
+  .nav-link {
+    @apply flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-slate-600
+           transition-colors duration-150 hover:bg-white/10 hover:text-white;
+  }
+  .nav-link-active {
+    @apply bg-white/15 text-white shadow-inner;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Leaflet integration
+   Markers are built with L.divIcon and inline SVG rather than the library's
+   default PNGs, which avoids the classic bundler "broken marker image" problem
+   and lets each vessel carry its own status colour.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.leaflet-container {
+  /* Keep panes below the app's modals and drawers. */
+  z-index: 0;
+  background: #dbeafe;
+  font-family: inherit;
+}
+
+.leaflet-container a {
+  color: #1d5a92;
+}
+
+.leaflet-control-attribution {
+  font-size: 10px !important;
+  background: rgb(255 255 255 / 0.82) !important;
+}
+
+.vessel-marker {
+  position: relative;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  border: 0;
+}
+
+.vessel-marker__glyph {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 9999px;
+  border: 2px solid #ffffff;
+  box-shadow: 0 2px 6px rgb(15 23 42 / 0.35);
+  transition: transform 140ms ease;
+}
+
+.vessel-marker__glyph svg {
+  transition: transform 220ms ease;
+}
+
+.vessel-marker:hover .vessel-marker__glyph {
+  transform: scale(1.14);
+}
+
+.vessel-marker--selected .vessel-marker__glyph {
+  box-shadow: 0 0 0 3px rgb(29 90 146 / 0.55), 0 2px 8px rgb(15 23 42 / 0.4);
+}
+
+/* Intrusion markers get a repeating ring so they are impossible to miss. */
+.vessel-marker__ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  animation: pulse-ring 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  pointer-events: none;
+}
+
+.zone-tooltip {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* Vertex handles used by the polygon drawing editor. */
+.vertex-handle {
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  border: 2px solid #1d5a92;
+  background: #ffffff;
+  cursor: grab;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 0.4);
+}
+.vertex-handle:active {
+  cursor: grabbing;
+}
+.vertex-handle--mid {
+  width: 9px;
+  height: 9px;
+  border-color: #64748b;
+  background: #e2e8f0;
+  cursor: copy;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Print / reduced motion
+   ══════════════════════════════════════════════════════════════════════════ */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+}

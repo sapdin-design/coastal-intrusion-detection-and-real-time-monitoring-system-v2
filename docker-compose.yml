@@ -1,0 +1,80 @@
+# CIDRTM — full stack.
+#
+#   docker compose up --build
+#
+# Dashboard → http://localhost:8080
+# API       → http://localhost:4000
+#
+# The stack runs WITHOUT MongoDB by default (the API's in-memory driver keeps a
+# JSON snapshot in a named volume). Flip `MONGODB_URI` below to use the bundled
+# Mongo service instead — the API hot-swaps drivers on boot with no other change.
+
+services:
+  api:
+    build:
+      context: ./server
+    container_name: cidrtm-api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "4000"
+      # Same-origin through the nginx proxy; keep the dev origin too for direct hits.
+      CLIENT_ORIGIN: "http://localhost:8080,http://localhost:5173"
+      JWT_SECRET: "${JWT_SECRET:-change-me-in-production-please-use-a-long-random-string}"
+      JWT_EXPIRES_IN: "12h"
+      DEVICE_API_KEY: "${DEVICE_API_KEY:-cidrtm-device-key-change-me}"
+      LOG_LEVEL: "info"
+      MEMORY_PERSIST: "true"
+
+      # ── Persistence switch ────────────────────────────────────────────────
+      # Leave empty for the zero-dependency in-memory driver.
+      MONGODB_URI: "${MONGODB_URI:-}"
+      # To use the bundled Mongo service, comment the line above and uncomment:
+      # MONGODB_URI: "mongodb://mongo:27017/cidrtm"
+      MONGODB_DB: "cidrtm"
+
+      # ── Detection tuning ──────────────────────────────────────────────────
+      GEOFENCE_APPROACH_BUFFER_M: "500"
+      GEOFENCE_ALERT_COOLDOWN_MS: "45000"
+      GEOFENCE_LOITER_TICKS: "6"
+      VESSEL_OFFLINE_AFTER_MS: "45000"
+
+      # ── Simulator ─────────────────────────────────────────────────────────
+      SIM_TICK_MS: "1000"
+      SIM_SPEED_MULTIPLIER: "1"
+      # Set true to have vessels start moving the moment the API boots.
+      SIM_AUTOSTART: "false"
+    volumes:
+      # Keeps seeded vessels/zones/alerts across container restarts.
+      - cidrtm-data:/app/data
+    ports:
+      - "4000:4000"
+
+  web:
+    build:
+      context: ./client
+    container_name: cidrtm-web
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "8080:80"
+
+  # ── Optional: real MongoDB ────────────────────────────────────────────────
+  # Not started by default. Bring it up explicitly:
+  #   docker compose up --build mongo
+  #   docker compose --profile mongo up --build
+  mongo:
+    image: mongo:7
+    container_name: cidrtm-mongo
+    restart: unless-stopped
+    profiles: ["mongo"]
+    ports:
+      - "27017:27017"
+    volumes:
+      - cidrtm-mongo:/data/db
+
+volumes:
+  cidrtm-data:
+  cidrtm-mongo:

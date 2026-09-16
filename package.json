@@ -1,0 +1,39 @@
+{
+  "name": "cidrtm",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CIDRTM — Coastal Intrusion Detection & Real-Time Monitoring System. Software-only mini project, architected for a future GNSS + AI + IoT extension.",
+  "keywords": [
+    "maritime-security",
+    "geofencing",
+    "realtime",
+    "socket.io",
+    "leaflet",
+    "mern",
+    "iot-ready"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.18.0"
+  },
+  "scripts": {
+    "install:all": "npm --prefix server install && npm --prefix client install",
+    "dev": "node scripts/dev.mjs",
+    "dev:server": "npm --prefix server run dev",
+    "dev:client": "npm --prefix client run dev",
+    "build": "npm --prefix server run build && npm --prefix client run build",
+    "start": "npm --prefix server run start",
+    "seed": "npm --prefix server run seed",
+    "seed:reset": "npm --prefix server run seed -- --reset",
+    "lint": "npm --prefix server run lint && npm --prefix client run lint",
+    "lint:fix": "npm --prefix server run lint:fix && npm --prefix client run lint:fix",
+    "format": "prettier --write \"{server,client}/src/**/*.{ts,tsx}\" \"*.{json,md}\"",
+    "format:check": "prettier --check \"{server,client}/src/**/*.{ts,tsx}\"",
+    "typecheck": "npm --prefix server run typecheck && npm --prefix client run typecheck",
+    "docker:up": "docker compose up --build",
+    "docker:down": "docker compose down -v"
+  },
+  "devDependencies": {
+    "prettier": "^3.3.3"
+  }
+}

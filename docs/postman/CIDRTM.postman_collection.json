@@ -1,0 +1,835 @@
+{
+  "info": {
+    "name": "CIDRTM — Coastal Intrusion Detection & Real-Time Monitoring",
+    "description": "REST surface of the CIDRTM API.\n\n## Getting started\n1. Pick the **Local (memory)** environment, or edit `baseUrl` directly.\n2. Run **Auth → Login (admin)**. Its test script stores the JWT into the `token` collection variable, so every other request is authenticated automatically.\n3. Requests that create data (zones, vessels, simulation) need an ADMIN or OPERATOR token. The `analyst` account is read-only by design and will get 403 on those.\n\n## The ingestion seam\n`Telemetry → Ingest position` accepts **either** a user JWT **or** the `x-device-key` header. That is the hook a real GNSS node uses, and it is why the simulator can be swapped for hardware without touching the platform.\n\n## Conventions\n- All responses use `{ success, data, meta? }` on success and `{ success: false, error: { code, message, details? } }` on failure.\n- Validation failures return **422** with `details[]` carrying per-field paths.\n- IDs are business-readable: `VSL-…`, `ZON-…`, `ALT-…`, `INC-…`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:4000/api/v1", "type": "string" },
+    { "key": "token", "value": "", "type": "string" },
+    { "key": "deviceKey", "value": "cidrtm-device-key", "type": "string" },
+    { "key": "vesselId", "value": "VSL-4F2A91", "type": "string" },
+    { "key": "zoneId", "value": "ZON-000001", "type": "string" },
+    { "key": "alertId", "value": "ALT-000001", "type": "string" },
+    { "key": "incidentId", "value": "INC-000001", "type": "string" }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }]
+  },
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Service health",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/health", "host": ["{{baseUrl}}"], "path": ["health"] },
+            "description": "Liveness probe. Reports the active persistence driver, simulation state, uptime and the number of cached geofence pairs. Public — no token required."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('reports a driver', () => pm.expect(['memory','mongodb']).to.include(b.data.driver));",
+                  "console.log('driver:', b.data.driver, '| simulation:', b.data.simulation);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login (admin)",
+          "auth": { "type": "noauth" },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('returns a token', () => pm.expect(body.data.token).to.be.a('string').and.not.empty);",
+                  "// Store it so every other request in the collection is authenticated.",
+                  "pm.collectionVariables.set('token', body.data.token);",
+                  "pm.collectionVariables.set('userId', body.data.user._id);",
+                  "console.log('signed in as', body.data.user.email, '(', body.data.user.role, ')');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@cidrtm.gov.in\",\n  \"password\": \"Admin@123\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] },
+            "description": "Seeded ADMIN account. Also available: operator@cidrtm.gov.in / Operator@123 and analyst@cidrtm.gov.in / Analyst@123."
+          }
+        },
+        {
+          "name": "Login (analyst — read-only)",
+          "auth": { "type": "noauth" },
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"analyst@cidrtm.gov.in\",\n  \"password\": \"Analyst@123\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] },
+            "description": "Read-only role. Useful for demonstrating that write endpoints return 403."
+          }
+        },
+        {
+          "name": "Current session",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/auth/me", "host": ["{{baseUrl}}"], "path": ["auth", "me"] },
+            "description": "Revalidates the stored token and returns the current user."
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/auth/logout", "host": ["{{baseUrl}}"], "path": ["auth", "logout"] },
+            "description": "Audit-logged logout. Token invalidation is client-side (the JWT is stateless)."
+          }
+        },
+        {
+          "name": "Validation failure (negative test)",
+          "auth": { "type": "noauth" },
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"not-an-email\"\n}" },
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] },
+            "description": "Expect 422 VALIDATION_ERROR with a per-field details array."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 Unprocessable', () => pm.response.to.have.status(422));",
+                  "const b = pm.response.json();",
+                  "pm.test('code is VALIDATION_ERROR', () => pm.expect(b.error.code).to.eql('VALIDATION_ERROR'));",
+                  "pm.test('details name the failing field', () => pm.expect(b.error.details.map(d => d.path)).to.include('email'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Users (admin only)",
+      "item": [
+        {
+          "name": "List users",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/users", "host": ["{{baseUrl}}"], "path": ["users"] }
+          }
+        },
+        {
+          "name": "Create user",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Postman Operator\",\n  \"email\": \"postman.operator@cidrtm.gov.in\",\n  \"password\": \"Postman@123\",\n  \"role\": \"OPERATOR\",\n  \"active\": true\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/users", "host": ["{{baseUrl}}"], "path": ["users"] }
+          }
+        },
+        {
+          "name": "Update user",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"active\": false\n}" },
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{userId}}"]
+            },
+            "description": "Deactivating an account blocks sign-in. The API refuses to delete or deactivate the last remaining admin."
+          }
+        },
+        {
+          "name": "Delete user",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{userId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Vessels",
+      "item": [
+        {
+          "name": "List vessels",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/vessels?page=1&limit=50",
+              "host": ["{{baseUrl}}"],
+              "path": ["vessels"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "50" },
+                { "key": "status", "value": "INTRUSION", "disabled": true },
+                { "key": "authorizationStatus", "value": "UNAUTHORIZED", "disabled": true },
+                { "key": "vesselType", "value": "FISHING_BOAT", "disabled": true }
+              ]
+            },
+            "description": "Toggle the optional query params to filter by status, authorization or type."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('returns an array', () => pm.expect(b.data).to.be.an('array'));",
+                  "if (b.data.length) { pm.collectionVariables.set('vesselId', b.data[0].vesselId); }",
+                  "console.log('vessels:', b.data.length, '| total:', b.meta && b.meta.total);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Fleet summary",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/vessels/summary", "host": ["{{baseUrl}}"], "path": ["vessels", "summary"] }
+          }
+        },
+        {
+          "name": "Vessel detail",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/vessels/{{vesselId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["vessels", "{{vesselId}}"]
+            }
+          }
+        },
+        {
+          "name": "Vessel track",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/vessels/{{vesselId}}/track?limit=200",
+              "host": ["{{baseUrl}}"],
+              "path": ["vessels", "{{vesselId}}", "track"],
+              "query": [{ "key": "limit", "value": "200" }]
+            },
+            "description": "Ring-buffered route history, newest last. Bounded by TRACK_POINTS_PER_VESSEL."
+          }
+        },
+        {
+          "name": "Vessel trip stats",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/vessels/{{vesselId}}/stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["vessels", "{{vesselId}}", "stats"]
+            }
+          }
+        },
+        {
+          "name": "Register vessel",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Postman Patrol\",\n  \"registrationNumber\": \"TN-08-PM-0001\",\n  \"vesselType\": \"PATROL_BOAT\",\n  \"owner\": \"Coastal Security Command\",\n  \"authorizationStatus\": \"AUTHORIZED\",\n  \"homePort\": \"Kanyakumari\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/vessels", "host": ["{{baseUrl}}"], "path": ["vessels"] },
+            "description": "OPERATOR or ADMIN. A new vessel is spawned at a random point inside the theatre bounds."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201 || pm.response.code === 200) {",
+                  "  pm.collectionVariables.set('vesselId', pm.response.json().data.vesselId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update vessel",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"authorizationStatus\": \"UNAUTHORIZED\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/vessels/{{vesselId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["vessels", "{{vesselId}}"]
+            },
+            "description": "Changing authorization invalidates the cached geofence episode for this vessel, so the next position update is re-evaluated from scratch — that is what stops a stale verdict surviving the edit."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Zones",
+      "item": [
+        {
+          "name": "List zones",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/zones?page=1&limit=50",
+              "host": ["{{baseUrl}}"],
+              "path": ["zones"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "50" }
+              ]
+            },
+            "description": "Each zone is decorated with a derived areaSqKm and centroid."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const zones = pm.response.json().data;",
+                  "if (zones.length) { pm.collectionVariables.set('zoneId', zones[0].zoneId); }",
+                  "zones.forEach(z => console.log(z.severity.padEnd(9), z.name, '|', z.areaSqKm, 'km²'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Zone activity",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/zones/activity", "host": ["{{baseUrl}}"], "path": ["zones", "activity"] },
+            "description": "Per-zone alert, intrusion and vessel counts."
+          }
+        },
+        {
+          "name": "Zone detail",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/zones/{{zoneId}}", "host": ["{{baseUrl}}"], "path": ["zones", "{{zoneId}}"] }
+          }
+        },
+        {
+          "name": "Create zone",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Postman Test Zone\",\n  \"description\": \"Polygon created from Postman to exercise the geofence engine.\",\n  \"zoneType\": \"RESTRICTED_ZONE\",\n  \"severity\": \"HIGH\",\n  \"approachBufferMeters\": 500,\n  \"coordinates\": [\n    { \"lat\": 8.10, \"lng\": 77.44 },\n    { \"lat\": 8.105, \"lng\": 77.48 },\n    { \"lat\": 8.08, \"lng\": 77.485 },\n    { \"lat\": 8.075, \"lng\": 77.445 }\n  ]\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/zones", "host": ["{{baseUrl}}"], "path": ["zones"] },
+            "description": "Minimum three vertices. The polygon is stored both as the authoring coordinate array and as derived GeoJSON."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201 || pm.response.code === 200) {",
+                  "  pm.collectionVariables.set('zoneId', pm.response.json().data.zoneId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Toggle zone status",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/zones/{{zoneId}}/toggle",
+              "host": ["{{baseUrl}}"],
+              "path": ["zones", "{{zoneId}}", "toggle"]
+            },
+            "description": "Enable or disable enforcement. Disabling forgets the cached episodes for this zone."
+          }
+        },
+        {
+          "name": "Delete zone",
+          "request": {
+            "method": "DELETE",
+            "url": { "raw": "{{baseUrl}}/zones/{{zoneId}}", "host": ["{{baseUrl}}"], "path": ["zones", "{{zoneId}}"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Alerts",
+      "item": [
+        {
+          "name": "List alerts",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/alerts?page=1&limit=25",
+              "host": ["{{baseUrl}}"],
+              "path": ["alerts"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "25" },
+                { "key": "status", "value": "NEW", "disabled": true },
+                { "key": "severity", "value": "CRITICAL", "disabled": true },
+                { "key": "alertType", "value": "UNAUTHORIZED_ENTRY", "disabled": true }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const rows = pm.response.json().data;",
+                  "if (rows.length) { pm.collectionVariables.set('alertId', rows[0].alertId); }",
+                  "console.log('returned', rows.length, 'alerts');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Alert summary",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/alerts/summary", "host": ["{{baseUrl}}"], "path": ["alerts", "summary"] }
+          }
+        },
+        {
+          "name": "Alert detail",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/alerts/{{alertId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["alerts", "{{alertId}}"]
+            }
+          }
+        },
+        {
+          "name": "Acknowledge alert",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/alerts/{{alertId}}/acknowledge",
+              "host": ["{{baseUrl}}"],
+              "path": ["alerts", "{{alertId}}", "acknowledge"]
+            },
+            "description": "OPERATOR or ADMIN. Stamps acknowledgedAt/acknowledgedBy and broadcasts alert:acknowledged."
+          }
+        },
+        {
+          "name": "Resolve alert",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/alerts/{{alertId}}/resolve",
+              "host": ["{{baseUrl}}"],
+              "path": ["alerts", "{{alertId}}", "resolve"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Incidents",
+      "item": [
+        {
+          "name": "List incidents",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/incidents?page=1&limit=25",
+              "host": ["{{baseUrl}}"],
+              "path": ["incidents"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "25" },
+                { "key": "status", "value": "OPEN", "disabled": true }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const rows = pm.response.json().data;",
+                  "if (rows.length) { pm.collectionVariables.set('incidentId', rows[0].incidentId); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Incident summary (MTTA / MTTR)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/incidents/summary", "host": ["{{baseUrl}}"], "path": ["incidents", "summary"] }
+          }
+        },
+        {
+          "name": "Incident detail",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/incidents/{{incidentId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["incidents", "{{incidentId}}"]
+            }
+          }
+        },
+        {
+          "name": "Advance status → ACKNOWLEDGED",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"status\": \"ACKNOWLEDGED\",\n  \"note\": \"Acknowledged from Postman\"\n}" },
+            "url": {
+              "raw": "{{baseUrl}}/incidents/{{incidentId}}/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["incidents", "{{incidentId}}", "status"]
+            },
+            "description": "Only legal transitions are accepted: OPEN → ACKNOWLEDGED → INVESTIGATING → RESOLVED → CLOSED."
+          }
+        },
+        {
+          "name": "Illegal transition (negative test)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"status\": \"INVESTIGATING\"\n}" },
+            "url": {
+              "raw": "{{baseUrl}}/incidents/{{incidentId}}/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["incidents", "{{incidentId}}", "status"]
+            },
+            "description": "Run straight after the previous request: ACKNOWLEDGED → INVESTIGATING is legal, but CLOSED → anything is not. Expect 409 CONFLICT once the case is closed."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('either accepted or refused with 409', () => pm.expect([200, 409]).to.include(pm.response.code));",
+                  "if (pm.response.code === 409) {",
+                  "  pm.test('conflict names the workflow rule', () => pm.expect(pm.response.json().error.code).to.eql('CONFLICT'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Assign incident",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"assignee\": \"Aarav Menon\"\n}" },
+            "url": {
+              "raw": "{{baseUrl}}/incidents/{{incidentId}}/assign",
+              "host": ["{{baseUrl}}"],
+              "path": ["incidents", "{{incidentId}}", "assign"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Telemetry (the hardware seam)",
+      "item": [
+        {
+          "name": "Ingest position — device key",
+          "auth": { "type": "noauth" },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('202 Accepted', () => pm.response.to.have.status(202));",
+                  "const b = pm.response.json().data;",
+                  "console.log('verdict:', b.verdict, '| status:', b.status);",
+                  "if (b.alerts && b.alerts.length) { console.log('raised', b.alerts.length, 'alert(s)'); }"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-device-key", "value": "{{deviceKey}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vesselId\": \"{{vesselId}}\",\n  \"latitude\": 8.5041,\n  \"longitude\": 77.5512,\n  \"speed\": 12.4,\n  \"direction\": 137,\n  \"source\": \"GNSS\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/telemetry", "host": ["{{baseUrl}}"], "path": ["telemetry"] },
+            "description": "**This is the endpoint a real GNSS node calls.** No user session is needed — the shared `x-device-key` header authenticates the device. Move `latitude`/`longitude` onto one of the seeded zone polygons and watch a 202 come back with verdict INTRUSION plus a freshly raised alert.\n\nThe exact same contract is used by the browser simulator, which is why simulated GPS can be replaced by hardware without changing the dashboard."
+          }
+        },
+        {
+          "name": "Ingest position — user token",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vesselId\": \"{{vesselId}}\",\n  \"latitude\": 8.11,\n  \"longitude\": 77.49,\n  \"speed\": 9.1,\n  \"direction\": 210,\n  \"source\": \"MANUAL\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/telemetry", "host": ["{{baseUrl}}"], "path": ["telemetry"] },
+            "description": "The same endpoint with a bearer token instead of a device key — used by the Simulation Console's manual injector."
+          }
+        },
+        {
+          "name": "Batch ingest",
+          "auth": { "type": "noauth" },
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-device-key", "value": "{{deviceKey}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"updates\": [\n    { \"vesselId\": \"{{vesselId}}\", \"latitude\": 8.12, \"longitude\": 77.5, \"speed\": 10, \"direction\": 180, \"source\": \"GNSS\" },\n    { \"vesselId\": \"{{vesselId}}\", \"latitude\": 8.121, \"longitude\": 77.501, \"speed\": 10.4, \"direction\": 182, \"source\": \"GNSS\" }\n  ]\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/telemetry/batch", "host": ["{{baseUrl}}"], "path": ["telemetry", "batch"] },
+            "description": "For a device buffering positions through a connectivity gap."
+          }
+        },
+        {
+          "name": "Latest positions",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/telemetry/latest", "host": ["{{baseUrl}}"], "path": ["telemetry", "latest"] }
+          }
+        },
+        {
+          "name": "Track history",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/telemetry/tracks/{{vesselId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["telemetry", "tracks", "{{vesselId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Simulation",
+      "item": [
+        {
+          "name": "Engine state",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/simulation/state", "host": ["{{baseUrl}}"], "path": ["simulation", "state"] }
+          }
+        },
+        {
+          "name": "Start",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/simulation/start", "host": ["{{baseUrl}}"], "path": ["simulation", "start"] }
+          }
+        },
+        {
+          "name": "Set speed 10×",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"multiplier\": 10\n}" },
+            "url": { "raw": "{{baseUrl}}/simulation/speed", "host": ["{{baseUrl}}"], "path": ["simulation", "speed"] },
+            "description": "The multiplier scales **simulated time per tick**, not the tick rate — bandwidth stays constant from 1× to 10×. Allowed: 1, 2, 5, 10."
+          }
+        },
+        {
+          "name": "Single step",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/simulation/step", "host": ["{{baseUrl}}"], "path": ["simulation", "step"] }
+          }
+        },
+        {
+          "name": "Pause",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/simulation/pause", "host": ["{{baseUrl}}"], "path": ["simulation", "pause"] }
+          }
+        },
+        {
+          "name": "Resume",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/simulation/resume", "host": ["{{baseUrl}}"], "path": ["simulation", "resume"] }
+          }
+        },
+        {
+          "name": "Stop",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/simulation/stop", "host": ["{{baseUrl}}"], "path": ["simulation", "stop"] }
+          }
+        },
+        {
+          "name": "Reset",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"purgeAlerts\": false\n}" },
+            "url": { "raw": "{{baseUrl}}/simulation/reset", "host": ["{{baseUrl}}"], "path": ["simulation", "reset"] },
+            "description": "Repositions every vessel and clears the geofence episode cache. Set `purgeAlerts: true` to also delete generated alerts and incidents."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Analytics",
+      "item": [
+        {
+          "name": "Overview",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/analytics/overview", "host": ["{{baseUrl}}"], "path": ["analytics", "overview"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const o = pm.response.json().data;",
+                  "console.log('threat:', o.threatLevel, '| vessels:', o.vessels.total, '| alerts:', o.alerts.active, '| incidents open:', o.incidents.open);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Full snapshot",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/analytics/full?hours=24&days=7",
+              "host": ["{{baseUrl}}"],
+              "path": ["analytics", "full"],
+              "query": [
+                { "key": "hours", "value": "24" },
+                { "key": "days", "value": "7" }
+              ]
+            },
+            "description": "One request hydrates the whole Analytics page: trends, distributions, zone performance, top-risk fleet and system info."
+          }
+        },
+        {
+          "name": "Hourly series",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/analytics/hourly?hours=24",
+              "host": ["{{baseUrl}}"],
+              "path": ["analytics", "hourly"],
+              "query": [{ "key": "hours", "value": "24" }]
+            }
+          }
+        },
+        {
+          "name": "Daily series",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/analytics/daily?days=7",
+              "host": ["{{baseUrl}}"],
+              "path": ["analytics", "daily"],
+              "query": [{ "key": "days", "value": "7" }]
+            }
+          }
+        },
+        {
+          "name": "Summary",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/analytics/summary", "host": ["{{baseUrl}}"], "path": ["analytics", "summary"] }
+          }
+        },
+        {
+          "name": "Zone performance",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/analytics/zones", "host": ["{{baseUrl}}"], "path": ["analytics", "zones"] }
+          }
+        },
+        {
+          "name": "Operator activity log",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/analytics/audit?limit=100",
+              "host": ["{{baseUrl}}"],
+              "path": ["analytics", "audit"],
+              "query": [{ "key": "limit", "value": "100" }]
+            },
+            "description": "Append-only audit trail of every mutating action, with actor, entity and source IP."
+          }
+        }
+      ]
+    }
+  ]
+}
