@@ -1,12 +1,6 @@
 import type { AlertType, Severity, ZoneType } from '../types/domain';
 
 /**
- * Operational theatre for the simulation: an offshore sector of the southern
- * Indian littoral (8.4–8.6 N, 77.4–77.7 E), the same waters used in the project
- * brief. The bounding box drives the GPS simulator's route generation and gives
- * the dashboard its default map framing.
- */
-/**
  * The monitored area.
  *
  * This is the **Kanyakumari coastal belt** — the southernmost stretch of the
