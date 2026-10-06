@@ -11,6 +11,7 @@ import {
   ZONE_STATUSES,
   ZONE_TYPES,
 } from '../types/domain';
+import { SIMULATION_SCENARIOS } from '../utils/scenarios';
 
 /* ─────────────────────────────── Primitives ────────────────────────────── */
 
@@ -170,6 +171,10 @@ export const simulationSpeedSchema = z.object({
 
 export const simulationResetSchema = z.object({
   purgeAlerts: z.boolean().optional(),
+});
+
+export const simulationScenarioSchema = z.object({
+  scenario: z.enum(SIMULATION_SCENARIOS),
 });
 
 /* ──────────────────────────────── Analytics ───────────────────────────── */

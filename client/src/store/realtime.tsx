@@ -173,6 +173,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
         for (const vessel of payload.vessels) {
           next[vessel.vesselId] = {
             vesselId: vessel.vesselId,
+            vesselCode: vessel.vesselCode,
             name: vessel.name,
             latitude: vessel.currentLatitude,
             longitude: vessel.currentLongitude,

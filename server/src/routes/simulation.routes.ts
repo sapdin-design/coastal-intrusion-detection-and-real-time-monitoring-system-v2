@@ -5,7 +5,11 @@ import { validate } from '../middleware/validate';
 import { auditService } from '../services/audit.service';
 import { simulationEngine } from '../services/simulation.service';
 import { clientIp, ok } from '../utils/http';
-import { simulationResetSchema, simulationSpeedSchema } from '../validators';
+import {
+  simulationResetSchema,
+  simulationScenarioSchema,
+  simulationSpeedSchema,
+} from '../validators';
 
 export const simulationRouter = Router();
 simulationRouter.use(requireAuth);
@@ -14,8 +18,36 @@ simulationRouter.use(requireAuth);
 simulationRouter.get(
   '/state',
   asyncHandler(async (_req, res) =>
-    ok(res, { ...(await simulationEngine.snapshot()), routes: simulationEngine.routeTable() }),
+    ok(res, {
+      ...(await simulationEngine.snapshot()),
+      routes: simulationEngine.routeTable(),
+      scenarios: simulationEngine.scenarios(),
+      timeline: simulationEngine.activeScenario().timeline,
+    }),
   ),
+);
+
+/**
+ * PATCH /api/v1/simulation/scenario — stage a demonstration scenario.
+ * Rewinds the participating fleet to the head of its assigned lane.
+ */
+simulationRouter.patch(
+  '/scenario',
+  OPERATIONAL,
+  validate({ body: simulationScenarioSchema }),
+  asyncHandler<AuthenticatedRequest>(async (req, res) => {
+    const { scenario } = req.body as { scenario: string };
+    const state = await simulationEngine.setScenario(scenario);
+    await auditService.record(
+      req.user!,
+      'SIM_SCENARIO',
+      'simulation',
+      'engine',
+      `Simulation scenario staged: ${state.scenarioName}`,
+      clientIp(req),
+    );
+    return ok(res, state);
+  }),
 );
 
 /** POST /api/v1/simulation/start — begins the GPS tick loop. */

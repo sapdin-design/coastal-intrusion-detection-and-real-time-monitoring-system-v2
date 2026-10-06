@@ -232,6 +232,7 @@ export const api = {
     stop: () => unwrap<SimulationState>(http.post('/simulation/stop')),
     step: () => unwrap<SimulationState>(http.post('/simulation/step')),
     speed: (multiplier: number) => unwrap<SimulationState>(http.patch('/simulation/speed', { multiplier })),
+    scenario: (scenario: string) => unwrap<SimulationState>(http.patch('/simulation/scenario', { scenario })),
     reset: (purgeAlerts = false) => unwrap<SimulationState>(http.post('/simulation/reset', { purgeAlerts })),
   },
 

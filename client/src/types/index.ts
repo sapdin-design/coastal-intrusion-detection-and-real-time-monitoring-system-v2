@@ -31,6 +31,8 @@ export type VesselStatus = 'ACTIVE' | 'WARNING' | 'INTRUSION' | 'OFFLINE';
 export interface Vessel {
   _id: string;
   vesselId: string;
+  /** Short operator-facing call sign, e.g. `V005`. */
+  vesselCode: string;
   name: string;
   registrationNumber: string;
   vesselType: VesselType;
@@ -179,8 +181,46 @@ export type GeofenceVerdict = 'NORMAL' | 'WARNING' | 'AUTHORIZED_ENTRY' | 'INTRU
 
 export type SimulationStatus = 'IDLE' | 'RUNNING' | 'PAUSED' | 'STOPPED';
 
+export type SimulationScenario =
+  | 'NORMAL_PATROL'
+  | 'ZONE_APPROACH'
+  | 'INTRUSION_DEMO'
+  | 'MULTI_VESSEL'
+  | 'FULL_DEMO';
+
+/** One narrative beat on the simulator timeline. */
+export interface TimelineStage {
+  key: string;
+  label: string;
+  detail: string;
+}
+
+export interface ScenarioSummary {
+  id: SimulationScenario;
+  name: string;
+  summary: string;
+  timeline: TimelineStage[];
+}
+
+export interface SimulationRoute {
+  vesselId: string;
+  behavior: string;
+  /** Predefined maritime sea lane the vessel is following. */
+  routeId?: string;
+  routeName?: string;
+  scenario?: string;
+  /** Index of the waypoint currently being steered toward. */
+  waypointIndex?: number;
+  waypointCount?: number;
+  /** Benched for the active scenario — on the plot but not under way. */
+  held?: boolean;
+  targetZoneId: string | null;
+}
+
 export interface SimulationState {
   status: SimulationStatus;
+  scenario?: SimulationScenario;
+  scenarioName?: string;
   speedMultiplier: number;
   tickMs: number;
   ticks: number;
@@ -192,12 +232,16 @@ export interface SimulationState {
   ticksPerSecond: number;
   intrusionsGenerated: number;
   alertsGenerated: number;
-  routes?: Array<{ vesselId: string; behavior: string; targetZoneId: string | null }>;
+  routes?: SimulationRoute[];
+  scenarios?: ScenarioSummary[];
+  timeline?: TimelineStage[];
 }
 
 /** Live position frame broadcast on `vessel:location_updated`. */
 export interface LocationBroadcast {
   vesselId: string;
+  /** Operator call sign, e.g. `V005`. */
+  vesselCode: string;
   name: string;
   latitude: number;
   longitude: number;

@@ -166,6 +166,14 @@ export interface Actor {
 
 export interface Vessel extends BaseDoc {
   vesselId: string;
+  /**
+   * Short operator-facing call sign, e.g. `V005`.
+   *
+   * The technical `vesselId` is a long opaque business key and stays the database
+   * identity; this is what appears on the map, in alerts and over the radio. A
+   * watch officer says "V005 is closing the boundary", not "VSL-ADC0BB is".
+   */
+  vesselCode: string;
   name: string;
   registrationNumber: string;
   vesselType: VesselType;

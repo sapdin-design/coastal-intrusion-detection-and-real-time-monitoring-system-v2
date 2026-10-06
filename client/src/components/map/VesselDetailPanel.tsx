@@ -13,6 +13,7 @@ import {
   Timer,
 } from 'lucide-react';
 import { Badge, Button, DetailRow, ProgressBar, SectionLabel } from '@/components/ui/base';
+import { VESSEL_TYPE_NAMES } from './vesselIcon';
 import {
   AUTHORIZATION_LABELS,
   VESSEL_TYPE_LABELS,
@@ -23,6 +24,7 @@ import {
   formatCoord,
   formatDistance,
   formatHeading,
+  formatKnots,
   formatNumber,
   formatSpeed,
   timeAgo,
@@ -72,12 +74,19 @@ export function VesselDetailPanel({
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <h3 className="truncate text-sm font-semibold text-slate-900">{frame.name}</h3>
+              <h3 className="truncate text-sm font-semibold text-slate-900">
+                <span className="font-mono">{frame.vesselCode ?? frame.vesselId}</span> — {frame.name}
+              </h3>
               <Badge className={vesselStatusClasses[status]}>
                 {VESSEL_STATUS_LABELS[status] ?? status}
               </Badge>
             </div>
-            <p className="mt-0.5 font-mono text-[11px] text-slate-500">{frame.vesselId}</p>
+            {/* Class, authorization and state on one line — the three things an
+                operator needs before reading any numbers. */}
+            <p className="mt-0.5 text-[11px] text-slate-500">
+              {VESSEL_TYPE_NAMES[frame.vesselType] ?? 'Vessel'} ·{' '}
+              {frame.authorizationStatus === 'AUTHORIZED' ? 'Authorized' : 'Unauthorized'}
+            </p>
           </div>
           <div className="flex shrink-0 items-center gap-1">
             {onFocus ? (
@@ -135,7 +144,8 @@ export function VesselDetailPanel({
           <MetricTile
             icon={<Gauge className="h-3.5 w-3.5" />}
             label="Speed"
-            value={formatSpeed(frame.speed)}
+            value={formatKnots(frame.speed)}
+            hint={formatSpeed(frame.speed)}
           />
           <MetricTile
             icon={<Compass className="h-3.5 w-3.5" />}
@@ -284,11 +294,14 @@ function MetricTile({
   icon,
   label,
   value,
+  hint,
   mono = false,
 }: {
   icon: React.ReactNode;
   label: string;
   value: string;
+  /** Secondary readout, e.g. the same speed in the stored unit. */
+  hint?: string;
   mono?: boolean;
 }) {
   return (
@@ -300,6 +313,7 @@ function MetricTile({
       <p className={cn('tnum mt-1 truncate text-[13px] font-semibold text-slate-800', mono && 'font-mono text-xs')}>
         {value}
       </p>
+      {hint ? <p className="tnum truncate text-[10px] text-slate-400">{hint}</p> : null}
     </div>
   );
 }

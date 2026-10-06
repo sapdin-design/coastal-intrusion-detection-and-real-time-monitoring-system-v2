@@ -17,6 +17,24 @@ import { round } from '../utils/ids';
 /** Speed below which a vessel inside or near a zone is considered to be loitering. */
 const LOITER_SPEED_KMH = 3.5;
 
+/**
+ * km/h → knots, one decimal.
+ *
+ * The model stores speed in km/h; maritime operators read knots. Conversion
+ * belongs at the point of display, not in the stored record.
+ */
+const knots = (kmh: number): string => (kmh / 1.852).toFixed(1);
+
+/**
+ * How a contact is named in an alert.
+ *
+ * Always "human-readable name + call sign" — "Unauthorized Fishing Boat V005".
+ * The name says what it is, the call sign says which one, and a watch officer
+ * reading the alert list cold can act on it without opening anything.
+ */
+const contact = (vessel: Vessel): string =>
+  `${vessel.name} ${vessel.vesselCode ?? vessel.vesselId}`;
+
 export interface ZoneEvaluation {
   zoneId: string;
   zoneName: string;
@@ -117,7 +135,11 @@ export class GeofenceEngine {
   severityFor(zone: Zone, verdict: GeofenceVerdict): Severity {
     switch (verdict) {
       case 'INTRUSION':
-        // A confirmed intrusion is never below HIGH, whatever the zone says.
+        // An unauthorized entry into a no-entry zone is the most serious thing
+        // this system reports — the zone exists precisely to keep traffic out —
+        // so it is always CRITICAL regardless of the zone's own severity band.
+        if (zone.zoneType === 'NO_ENTRY_ZONE') return 'CRITICAL';
+        // Any other confirmed intrusion is never below HIGH.
         return zone.severity === 'CRITICAL' || zone.severity === 'HIGH' ? zone.severity : 'HIGH';
       case 'WARNING':
         return APPROACH_SEVERITY[zone.severity];
@@ -173,10 +195,12 @@ export class GeofenceEngine {
               state: evaluation.state,
               verdict: 'INTRUSION',
               distanceMeters: 0,
+              // The wording follows the recorded severity rather than assuming
+              // CRITICAL, so the message can never overstate the alert.
               severity: this.severityFor(zone, 'INTRUSION'),
-              message: `UNAUTHORIZED vessel ${vessel.name} (${vessel.vesselId}) entered ${zone.name}${
-                isNewEntry ? '' : ' and remains inside'
-              }.`,
+              message: isNewEntry
+                ? `${this.severityFor(zone, 'INTRUSION')} — ${contact(vessel)} has entered ${zone.name}.`
+                : `${contact(vessel)} remains inside ${zone.name}.`,
               opensIncident: isNewEntry,
             });
           }
@@ -191,7 +215,7 @@ export class GeofenceEngine {
             verdict: 'AUTHORIZED_ENTRY',
             distanceMeters: 0,
             severity: 'LOW',
-            message: `Authorized vessel ${vessel.name} (${vessel.vesselId}) entered ${zone.name}.`,
+            message: `${contact(vessel)} entered ${zone.name} on a valid authorization.`,
             opensIncident: false,
           });
         }
@@ -208,9 +232,9 @@ export class GeofenceEngine {
               verdict: 'WARNING',
               distanceMeters: evaluation.distanceMeters,
               severity: this.severityFor(zone, 'WARNING'),
-              message: `${vessel.name} (${vessel.vesselId}) is approaching ${zone.name} — ${Math.round(
+              message: `${vessel.vesselCode ?? vessel.vesselId} is ${Math.round(
                 evaluation.distanceMeters,
-              )} m from the boundary.`,
+              )} m from ${zone.name} and closing.`,
               opensIncident: false,
             });
           }
@@ -226,7 +250,7 @@ export class GeofenceEngine {
           verdict: 'NORMAL',
           distanceMeters: evaluation.distanceMeters,
           severity: 'LOW',
-          message: `${vessel.name} (${vessel.vesselId}) cleared ${zone.name}.`,
+          message: `${contact(vessel)} has cleared ${zone.name}.`,
           opensIncident: false,
         });
         next.loiterTicks = 0;
@@ -248,9 +272,9 @@ export class GeofenceEngine {
             verdict: evaluation.verdict,
             distanceMeters: evaluation.distanceMeters,
             severity: 'MEDIUM',
-            message: `${vessel.name} (${vessel.vesselId}) has been loitering ${
-              evaluation.state === 'INSIDE' ? 'inside' : 'next to'
-            } ${zone.name} at ${vessel.speed.toFixed(1)} km/h.`,
+            message: `${contact(vessel)} is loitering ${
+              evaluation.state === 'INSIDE' ? 'inside' : 'alongside'
+            } ${zone.name} at ${knots(vessel.speed)} kn with no declared purpose.`,
             opensIncident: false,
           });
         }

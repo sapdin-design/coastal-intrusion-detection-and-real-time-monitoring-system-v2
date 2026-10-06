@@ -13,7 +13,15 @@ import {
 import { TILE_LAYERS, THEATRE, COASTLINE, type TileLayerKey } from '@/lib/constants';
 import { formatDistance, formatHeading, formatSpeed, timeAgo, zoneSeverityHex } from '@/lib/format';
 import type { LatLng, LocationBroadcast, TrackPoint, Zone } from '@/types';
-import { vesselIcon, vertexIcon } from './vesselIcon';
+import { VESSEL_TYPE_NAMES, vesselIcon, vertexIcon } from './vesselIcon';
+
+/**
+ * Breadcrumb tuning for vessel trails: roughly one point per 30 m, ten retained.
+ * Long enough to show where a contact came from, short enough that twenty of them
+ * do not turn the chart into spaghetti.
+ */
+const TRAIL_MIN_STEP_DEG = 0.0003;
+const TRAIL_MAX_POINTS = 10;
 
 export interface LiveMapProps {
   frames: Record<string, LocationBroadcast>;
@@ -138,6 +146,31 @@ export function LiveMap({
     () => track.map((point) => [point.lat, point.lng] as [number, number]),
     [track],
   );
+
+  /**
+   * Recent breadcrumbs per vessel, accumulated client-side.
+   *
+   * The realtime feed carries only the current position, so short history has to
+   * be kept here. A ref is enough: the component re-renders on every frame
+   * anyway, and the trails are read during render.
+   */
+  const trails = useRef(new Map<string, Array<[number, number]>>());
+
+  useEffect(() => {
+    const store = trails.current;
+    for (const frame of Object.values(frames)) {
+      const line = store.get(frame.vesselId) ?? [];
+      const last = line[line.length - 1];
+      const movedEnough =
+        !last ||
+        Math.abs(last[0] - frame.latitude) > TRAIL_MIN_STEP_DEG ||
+        Math.abs(last[1] - frame.longitude) > TRAIL_MIN_STEP_DEG;
+      if (!movedEnough) continue;
+      line.push([frame.latitude, frame.longitude]);
+      while (line.length > TRAIL_MAX_POINTS) line.shift();
+      store.set(frame.vesselId, line);
+    }
+  }, [frames]);
 
   return (
     <div className={className ?? 'h-full w-full'}>
@@ -341,6 +374,27 @@ export function LiveMap({
             })
           : null}
 
+        {/* ── vessel breadcrumb trails ─────────────────────────────────── */}
+        {framesArray.map((frame) => {
+          const line = trails.current.get(frame.vesselId);
+          if (!line || line.length < 2) return null;
+          const intruding = frame.status === 'INTRUSION';
+          return (
+            <Polyline
+              key={`trail-${frame.vesselId}`}
+              positions={line}
+              pathOptions={{
+                // Only the offending track is coloured; everything else stays a
+                // quiet grey-blue so the intrusion reads at a glance.
+                color: intruding ? '#dc2626' : '#2b72ad',
+                weight: intruding ? 2.5 : 1.5,
+                opacity: intruding ? 0.8 : 0.3,
+                lineCap: 'round',
+              }}
+            />
+          );
+        })}
+
         {/* ── vessel markers ───────────────────────────────────────────── */}
         {framesArray.map((frame) => (
           <Marker
@@ -351,9 +405,11 @@ export function LiveMap({
             eventHandlers={{ click: () => onSelectVessel(frame.vesselId) }}
           >
             <Tooltip direction="top" offset={[0, -14]} opacity={1}>
-              <div className="min-w-[168px] space-y-1">
+              <div className="min-w-[190px] space-y-1">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-semibold text-slate-800">{frame.name}</span>
+                  <span className="text-xs font-semibold text-slate-800">
+                    {frame.vesselCode ?? frame.vesselId} — {frame.name}
+                  </span>
                   <span
                     className="rounded px-1 py-0.5 text-[9px] font-bold uppercase"
                     style={{
@@ -378,16 +434,17 @@ export function LiveMap({
                     {frame.status}
                   </span>
                 </div>
-                <div className="font-mono text-[10px] text-slate-500">{frame.vesselId}</div>
+                <div className="text-[10px] text-slate-500">
+                  {VESSEL_TYPE_NAMES[frame.vesselType] ?? 'Vessel'} ·{' '}
+                  {frame.authorizationStatus === 'AUTHORIZED' ? 'Authorized' : 'Unauthorized'}
+                </div>
                 <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[10px] text-slate-600">
                   <span>Speed</span>
                   <span className="text-right font-medium">{formatSpeed(frame.speed)}</span>
                   <span>Heading</span>
                   <span className="text-right font-medium">{formatHeading(frame.direction)}</span>
-                  <span>Auth</span>
-                  <span className="text-right font-medium">
-                    {frame.authorizationStatus === 'AUTHORIZED' ? 'Authorized' : 'Unauthorized'}
-                  </span>
+                  <span>Call sign</span>
+                  <span className="text-right font-mono font-medium">{frame.vesselCode ?? '—'}</span>
                   <span>Seen</span>
                   <span className="text-right font-medium">{timeAgo(frame.lastSeen)}</span>
                 </div>

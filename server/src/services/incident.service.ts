@@ -65,12 +65,17 @@ export class IncidentService {
       vesselName: vessel.name,
       zoneId: zone?.zoneId ?? null,
       zoneName: zone?.name ?? null,
-      title: input.title ?? `Unauthorized entry into ${zone?.name ?? 'restricted waters'}`,
+      title:
+        input.title ??
+        `${vessel.name} ${vessel.vesselCode ?? vessel.vesselId} — unauthorized entry into ${
+          zone?.name ?? 'restricted waters'
+        }`,
       description:
         input.description ??
-        `Vessel ${vessel.name} (${vessel.vesselId}, ${titleCase(vessel.vesselType)}) entered ` +
-          `${zone?.name ?? 'a restricted zone'} without authorization at ${vessel.speed.toFixed(1)} km/h ` +
-          `on heading ${Math.round(vessel.direction)}°.`,
+        `${input.severity ?? 'HIGH'} — ${vessel.name} ${vessel.vesselCode ?? vessel.vesselId} crossed into ` +
+          `${zone?.name ?? 'a restricted zone'} without authorization, making ` +
+          `${(vessel.speed / 1.852).toFixed(1)} kn on heading ${Math.round(vessel.direction)}°. ` +
+          `The contact was tracked by the geofencing engine from open water.`,
       severity: input.severity,
       status: 'OPEN',
       location: input.location ?? { lat: vessel.currentLatitude, lng: vessel.currentLongitude },

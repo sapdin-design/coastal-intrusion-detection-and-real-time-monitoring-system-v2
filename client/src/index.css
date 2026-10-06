@@ -180,6 +180,10 @@
   background: rgb(255 255 255 / 0.82) !important;
 }
 
+/* ── Vessel markers ──────────────────────────────────────────────────────
+   Plan-view boat silhouettes, rotated to the vessel's heading. Deliberately not
+   circular pins: an operator should be able to tell a fishing boat from a cargo
+   ship, and see which way it is pointing, without clicking anything. */
 .vessel-marker {
   position: relative;
   display: grid;
@@ -188,36 +192,65 @@
   border: 0;
 }
 
-.vessel-marker__glyph {
+.vessel-marker__hull {
   display: grid;
   place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 9999px;
-  border: 2px solid #ffffff;
-  box-shadow: 0 2px 6px rgb(15 23 42 / 0.35);
+  width: 26px;
+  height: 26px;
+  filter: drop-shadow(0 1px 2px rgb(15 23 42 / 0.5));
   transition: transform 140ms ease;
 }
 
-.vessel-marker__glyph svg {
-  transition: transform 220ms ease;
+/* Heading changes rotate the glyph smoothly instead of snapping. */
+.vessel-marker__hull svg {
+  transition: transform 260ms ease-out;
 }
 
-.vessel-marker:hover .vessel-marker__glyph {
-  transform: scale(1.14);
+.vessel-marker:hover .vessel-marker__hull {
+  transform: scale(1.18);
 }
 
-.vessel-marker--selected .vessel-marker__glyph {
-  box-shadow: 0 0 0 3px rgb(29 90 146 / 0.55), 0 2px 8px rgb(15 23 42 / 0.4);
+.vessel-marker--selected .vessel-marker__hull {
+  filter: drop-shadow(0 0 0 2px rgb(29 90 146 / 0.9)) drop-shadow(0 2px 4px rgb(15 23 42 / 0.5));
 }
 
-/* Intrusion markers get a repeating ring so they are impossible to miss. */
+/* Offline contacts stay legible but visibly recede. */
+.vessel-marker--offline .vessel-marker__hull {
+  opacity: 0.55;
+  filter: grayscale(1) drop-shadow(0 1px 2px rgb(15 23 42 / 0.35));
+}
+
+/* Authorization badge — a separate axis from movement state, so it gets its own
+   dot rather than recolouring the hull. */
+.vessel-marker__badge {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  border: 1.5px solid #ffffff;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.4);
+  pointer-events: none;
+}
+
+/* Only genuine events ring, and only an intrusion pulses hard — if every marker
+   animated, none of them would draw the eye. */
 .vessel-marker__ring {
   position: absolute;
   inset: 0;
   border-radius: 9999px;
-  animation: pulse-ring 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   pointer-events: none;
+}
+
+.vessel-marker__ring--critical {
+  background: rgb(220 38 38 / 0.32);
+  animation: pulse-ring 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.vessel-marker__ring--warning {
+  background: rgb(217 119 6 / 0.26);
+  animation: pulse-ring 2.6s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
 .zone-tooltip {

@@ -14,13 +14,15 @@ import type {
 import { businessId, normalizeAngle, nowIso, round } from '../utils/ids';
 import { bearingDegrees, haversineMeters } from '../utils/geo';
 import { alertService } from './alert.service';
-import { geofenceEngine } from './geofence.service';
+import { geofenceEngine, type ZoneEvaluation } from './geofence.service';
 import { incidentService } from './incident.service';
 import { vesselService } from './vessel.service';
 
 /** Compact payload broadcast to the live map on every accepted position. */
 export interface LocationBroadcast {
   vesselId: string;
+  /** Operator call sign, e.g. `V005`. */
+  vesselCode: string;
   name: string;
   latitude: number;
   longitude: number;
@@ -35,6 +37,23 @@ export interface LocationBroadcast {
   nearestDistanceMeters: number | null;
   state: 'OUTSIDE' | 'APPROACHING' | 'INSIDE';
   verdict: 'NORMAL' | 'WARNING' | 'AUTHORIZED_ENTRY' | 'INTRUSION';
+}
+
+/**
+ * The evaluation for the zone actually nearest to the vessel.
+ *
+ * `evaluations` arrives in whatever order the zone store happens to iterate, so
+ * taking `evaluations[0]` reports an arbitrary zone — a contact closing on the
+ * cape exclusion area would be labelled with a nuclear exclusion zone 20 km away
+ * on the other side of the sector. The popup's "nearest zone" and "distance to
+ * zone" fields have to mean what they say.
+ */
+function closestZone(evaluations: ZoneEvaluation[]): ZoneEvaluation | null {
+  let best: ZoneEvaluation | null = null;
+  for (const evaluation of evaluations) {
+    if (!best || evaluation.distanceMeters < best.distanceMeters) best = evaluation;
+  }
+  return best;
 }
 
 /**
@@ -170,9 +189,10 @@ class IngestionService {
 
     /* ── 7. broadcast ─────────────────────────────────────────────────── */
 
-    const nearest = evaluations[0] ?? null;
+    const nearest = closestZone(evaluations);
     const broadcast: LocationBroadcast = {
       vesselId: withRisk.vesselId,
+      vesselCode: withRisk.vesselCode,
       name: withRisk.name,
       latitude: withRisk.currentLatitude,
       longitude: withRisk.currentLongitude,
@@ -242,9 +262,10 @@ class IngestionService {
 
     for (const vessel of vessels) {
       const evaluations = geofenceEngine.evaluateVessel(vessel, zones);
-      const nearest = evaluations[0] ?? null;
+      const nearest = closestZone(evaluations);
       out[vessel.vesselId] = {
         vesselId: vessel.vesselId,
+        vesselCode: vessel.vesselCode,
         name: vessel.name,
         latitude: vessel.currentLatitude,
         longitude: vessel.currentLongitude,

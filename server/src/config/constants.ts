@@ -56,6 +56,47 @@ export const COASTLINE: ReadonlyArray<{ lat: number; lng: number }> = [
   { lat: 8.19, lng: 77.74 },
 ];
 
+/**
+ * Land mass of the Kanyakumari district, as a closed polygon.
+ *
+ * Built from {@link COASTLINE} by running the trace west→east and then closing
+ * it far inland to the north. Everything **inside** this ring is land; everything
+ * outside is water. That single predicate is what keeps simulated vessels off the
+ * beach — see `isOnLand` / `isOffshore` in `utils/maritime.ts`.
+ *
+ * The northern closure sits at 8.32 °N, well outside {@link THEATRE}, so within the
+ * monitored box the only boundary that matters is the real coastline.
+ */
+export const LAND_POLYGON: { lat: number; lng: number }[] = [
+  ...COASTLINE,
+  { lat: 8.32, lng: 77.8 }, // north-east closure
+  { lat: 8.32, lng: 77.1 }, // north-west closure
+];
+
+/**
+ * Southernmost latitude of the coastline (Sanguthurai, just south of the cape).
+ *
+ * Any point below this is water at every longitude, so it is the one band that
+ * needs no land test. Used as the guaranteed-safe fallback when rejection
+ * sampling for an offshore point somehow fails.
+ */
+export const COAST_MIN_LAT = 8.072;
+
+/**
+ * Vessel classes and the human-readable role name each one carries.
+ *
+ * Operators read names, not enum values, so the displayed name is derived from
+ * the role rather than invented — "Unauthorized Fishing Boat" tells a watch
+ * officer what they are looking at in a way "Drifter" never did.
+ */
+export const VESSEL_TYPE_LABELS: Record<string, string> = {
+  FISHING_BOAT: 'Fishing Boat',
+  PATROL_BOAT: 'Patrol Boat',
+  CARGO_SHIP: 'Cargo Ship',
+  PASSENGER_BOAT: 'Passenger Boat',
+  UNKNOWN: 'Unknown Craft',
+};
+
 /** Mean Earth radius in metres, used by every haversine helper. */
 export const EARTH_RADIUS_M = 6_371_000;
 

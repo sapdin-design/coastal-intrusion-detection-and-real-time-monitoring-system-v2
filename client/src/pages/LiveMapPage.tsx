@@ -40,6 +40,7 @@ import {
 import { LiveMap } from '@/components/map/LiveMap';
 import { MapLegend } from '@/components/map/MapLegend';
 import { VesselDetailPanel } from '@/components/map/VesselDetailPanel';
+import { VESSEL_TYPE_NAMES } from '@/components/map/vesselIcon';
 import type { LocationBroadcast } from '@/types';
 
 type StatusFilter = 'ALL' | 'ACTIVE' | 'WARNING' | 'INTRUSION' | 'OFFLINE' | 'UNAUTHORIZED';
@@ -220,13 +221,15 @@ export function LiveMapPage() {
                       >
                         <div className="flex items-center justify-between gap-2">
                           <span className="truncate text-[13px] font-semibold text-slate-800">
+                            <span className="font-mono">{frame.vesselCode ?? frame.vesselId}</span>
+                            {' — '}
                             {frame.name}
                           </span>
                           <Badge className={vesselStatusClasses[frame.status]}>{frame.status}</Badge>
                         </div>
                         <div className="mt-0.5 flex items-center justify-between gap-2">
-                          <span className="truncate font-mono text-[10px] text-slate-400">
-                            {frame.vesselId}
+                          <span className="truncate text-[10px] text-slate-400">
+                            {VESSEL_TYPE_NAMES[frame.vesselType] ?? 'Vessel'}
                           </span>
                           <span className="shrink-0 text-[10px] text-slate-400">
                             {timeAgo(frame.lastSeen)}
@@ -293,8 +296,8 @@ export function LiveMapPage() {
             className="h-full w-full"
             overlay={
               <>
-                <div className="pointer-events-none absolute left-3 top-3 z-[500] hidden lg:block">
-                  <MapLegend />
+                <div className="absolute bottom-8 left-3 z-[500] hidden lg:block">
+                  <MapLegend compact collapsible />
                 </div>
                 {track.isLoading && selected ? (
                   <div className="absolute right-3 top-3 z-[500]">
@@ -343,7 +346,11 @@ export function LiveMapPage() {
       {/* Compact drawer for narrow screens */}
       {selectedFrame ? (
         <Card className="lg:hidden">
-          <CardHeader title={selectedFrame.name} subtitle={selectedFrame.vesselId} icon={<Ship className="h-4 w-4" />} />
+          <CardHeader
+            title={`${selectedFrame.vesselCode ?? selectedFrame.vesselId} — ${selectedFrame.name}`}
+            subtitle={VESSEL_TYPE_NAMES[selectedFrame.vesselType] ?? 'Vessel'}
+            icon={<Ship className="h-4 w-4" />}
+          />
           <div className="max-h-[420px] overflow-y-auto">
             <VesselDetailPanel
               frame={selectedFrame}

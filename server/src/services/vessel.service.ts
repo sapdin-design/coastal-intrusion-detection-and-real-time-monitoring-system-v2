@@ -11,8 +11,28 @@ import type {
   VesselType,
 } from '../types/domain';
 import { businessId, clamp, nowIso, randRange, round } from '../utils/ids';
-import { randomPointInBounds } from '../utils/geo';
+import { randomOffshorePoint } from '../utils/maritime';
 import { geofenceEngine } from './geofence.service';
+
+/**
+ * Allocates the next free call sign, continuing the V001…V0NN sequence.
+ *
+ * Codes are operator-facing and must stay short and unique, so we scan what is
+ * already in use and take the next number rather than deriving one from a count
+ * (which would collide after any deletion).
+ */
+export function nextVesselCode(existing: Array<Pick<Vessel, 'vesselCode'>>): string {
+  const used = new Set(
+    existing
+      .map((v) => v.vesselCode)
+      .filter((code): code is string => Boolean(code))
+      .map((code) => Number.parseInt(code.replace(/\D/g, ''), 10))
+      .filter((n) => Number.isFinite(n)),
+  );
+  let n = 1;
+  while (used.has(n)) n += 1;
+  return `V${String(n).padStart(3, '0')}`;
+}
 
 export interface VesselQuery {
   status?: VesselStatus;
@@ -24,6 +44,8 @@ export interface VesselQuery {
 
 export interface CreateVesselInput {
   name: string;
+  /** Optional explicit call sign; allocated automatically when omitted. */
+  vesselCode?: string;
   registrationNumber?: string;
   vesselType: VesselType;
   owner?: string;
@@ -76,13 +98,17 @@ export class VesselService {
   async create(input: CreateVesselInput, actor: Actor | null): Promise<Vessel> {
     const store = getStore();
     const at = nowIso();
-    const start = randomPointInBounds(THEATRE.bounds);
+    // New contacts are placed at sea — never at a random point in the bounding
+    // box, which would drop them on land.
+    const start = randomOffshorePoint(THEATRE.bounds);
+    const existing = await store.vessels.list();
 
     const vessel: Vessel = {
       _id: businessId('vessel'),
       vesselId: businessId('vessel'),
+      vesselCode: input.vesselCode ?? nextVesselCode(existing),
       name: input.name,
-      registrationNumber: input.registrationNumber ?? `REG-${Date.now().toString().slice(-6)}`,
+      registrationNumber: input.registrationNumber ?? `REG-TN-${Date.now().toString().slice(-4)}`,
       vesselType: input.vesselType,
       owner: input.owner ?? 'Unknown',
       authorizationStatus: input.authorizationStatus,

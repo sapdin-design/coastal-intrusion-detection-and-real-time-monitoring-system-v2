@@ -85,8 +85,9 @@ function IntrusionAlarm() {
             Intrusion detected — {zone.name}
           </p>
           <p className="truncate text-xs text-rose-50">
-            {vessel.name} <span className="font-mono">({vessel.vesselId})</span> entered the zone without
-            authorization · speed {vessel.speed.toFixed(1)} km/h · {timeAgo(detectedAt)}
+            <span className="font-mono">{vessel.vesselCode ?? vessel.vesselId}</span> — {vessel.name}{' '}
+            entered the zone without authorization · {(vessel.speed / 1.852).toFixed(1)} kn ·{' '}
+            {timeAgo(detectedAt)}
           </p>
         </div>
 

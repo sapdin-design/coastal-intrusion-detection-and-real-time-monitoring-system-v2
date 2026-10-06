@@ -26,6 +26,16 @@ export const formatCoord = (value: number | undefined, axis: 'lat' | 'lng'): str
 export const formatSpeed = (kmh: number | undefined): string =>
   kmh === undefined || kmh === null ? '—' : `${kmh.toFixed(1)} km/h`;
 
+/**
+ * Maritime speed.
+ *
+ * The data model stores km/h, but a coastal operations console reads in knots —
+ * "making 8.4 knots" is what a watch officer says. Shown alongside the km/h value
+ * rather than replacing it, so the stored unit is never ambiguous.
+ */
+export const formatKnots = (kmh: number | undefined): string =>
+  kmh === undefined || kmh === null ? '—' : `${(kmh / 1.852).toFixed(1)} kn`;
+
 const COMPASS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
 
 export const formatHeading = (deg: number | undefined): string => {

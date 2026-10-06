@@ -81,6 +81,17 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {
         <p className="truncate text-[11px] leading-tight text-slate-500">{meta.subtitle}</p>
       </div>
 
+      {/* ── simulation mode ─────────────────────────────────────────────
+          Always visible. This is a software prototype fed by a GPS simulator —
+          no radar, AIS, satellite or camera input is involved, and the console
+          should never imply otherwise. */}
+      <span
+        className="hidden rounded-md bg-sky-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-sky-700 ring-1 ring-inset ring-sky-200 lg:inline"
+        title="Prototype — every position on this console comes from a software GPS simulator, not live sensors."
+      >
+        Simulation mode
+      </span>
+
       {/* ── threat posture ─────────────────────────────────────────────── */}
       <Badge className={cn('hidden ring-1 ring-inset md:inline-flex', threatStyle.className)}>
         <span className={cn('legend-dot', threatStyle.dot)} />

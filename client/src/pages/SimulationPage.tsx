@@ -1,12 +1,15 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Activity,
   AlertTriangle,
   Anchor,
+  Check,
+  Circle,
   Compass,
   Gauge,
   Hexagon,
+  Loader2,
   Pause,
   Play,
   Radio,
@@ -19,7 +22,16 @@ import {
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { SIMULATION_SPEEDS } from '@/lib/constants';
-import { cn, formatNumber, formatSpeed, timeAgo } from '@/lib/format';
+import {
+  cn,
+  formatCoord,
+  formatDistance,
+  formatHeading,
+  formatKnots,
+  formatNumber,
+  formatSpeed,
+  timeAgo,
+} from '@/lib/format';
 import { useAuth } from '@/store/auth';
 import { useRealtime } from '@/store/realtime';
 import { useToast } from '@/store/toast';
@@ -36,7 +48,60 @@ import {
   StatCard,
   Toggle,
 } from '@/components/ui';
-import type { SimulationStatus } from '@/types';
+import type {
+  AuthorizationStatus,
+  GeofenceState,
+  GeofenceVerdict,
+  LocationBroadcast,
+  SimulationScenario,
+  SimulationStatus,
+  TimelineStage,
+  Vessel,
+  VesselStatus,
+  VesselType,
+} from '@/types';
+
+/**
+ * A contact as the console needs it: the registry record merged with the latest
+ * live position frame. The registry always has an entry, the frame only arrives
+ * once the engine has ticked — so the panel is populated the moment a scenario
+ * is staged, without waiting for telemetry.
+ */
+interface ContactView {
+  vesselId: string;
+  vesselCode: string;
+  name: string;
+  vesselType: VesselType;
+  latitude: number;
+  longitude: number;
+  speed: number;
+  direction: number;
+  status: VesselStatus;
+  authorizationStatus: AuthorizationStatus;
+  verdict: GeofenceVerdict;
+  zoneState: GeofenceState;
+  nearestZone: string | null;
+  nearestDistanceMeters: number | null;
+}
+
+function toContact(vessel: Vessel, frame?: LocationBroadcast): ContactView {
+  return {
+    vesselId: vessel.vesselId,
+    vesselCode: vessel.vesselCode ?? vessel.vesselId,
+    name: vessel.name,
+    vesselType: vessel.vesselType,
+    latitude: frame?.latitude ?? vessel.currentLatitude,
+    longitude: frame?.longitude ?? vessel.currentLongitude,
+    speed: frame?.speed ?? vessel.speed,
+    direction: frame?.direction ?? vessel.direction,
+    status: frame?.status ?? vessel.status,
+    authorizationStatus: frame?.authorizationStatus ?? vessel.authorizationStatus,
+    verdict: frame?.verdict ?? 'NORMAL',
+    zoneState: frame?.state ?? 'OUTSIDE',
+    nearestZone: frame?.nearestZone ?? null,
+    nearestDistanceMeters: frame?.nearestDistanceMeters ?? null,
+  };
+}
 
 const STATUS_STYLE: Record<SimulationStatus, string> = {
   RUNNING: 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200',
@@ -51,8 +116,15 @@ const BEHAVIOUR_STYLE: Record<string, string> = {
   TRANSIT: 'bg-sky-50 text-sky-700 ring-1 ring-inset ring-sky-200',
 };
 
+const VERDICT_STYLE: Record<string, string> = {
+  NORMAL: 'text-slate-600',
+  WARNING: 'text-amber-700',
+  AUTHORIZED_ENTRY: 'text-emerald-700',
+  INTRUSION: 'text-rose-700',
+};
+
 /**
- * GPS simulator console (spec §11).
+ * GPS simulator console.
  *
  * Also doubles as the live demonstration of the ingestion contract: the manual
  * injector posts the exact JSON body a Raspberry Pi with a GNSS module would send,
@@ -60,7 +132,7 @@ const BEHAVIOUR_STYLE: Record<string, string> = {
  * endpoint, the same pipeline, no changes downstream.
  */
 export function SimulationPage() {
-  const { simulation, vessels, zones } = useRealtime();
+  const { simulation, live, vessels, zones, alerts, incidents } = useRealtime();
   const { canOperate, isAdmin } = useAuth();
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -68,6 +140,7 @@ export function SimulationPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
   const [purgeOnReset, setPurgeOnReset] = useState(false);
+  const [selectedVesselId, setSelectedVesselId] = useState('');
   const [injectVesselId, setInjectVesselId] = useState('');
   const [injectLat, setInjectLat] = useState('8.5000');
   const [injectLng, setInjectLng] = useState('77.5500');
@@ -82,8 +155,32 @@ export function SimulationPage() {
 
   const state = stateQuery.data ?? simulation;
   const routes = stateQuery.data?.routes ?? [];
-  const vesselList = Object.values(vessels);
+  const scenarios = stateQuery.data?.scenarios ?? [];
+  const contacts = useMemo(
+    () => Object.values(vessels).map((vessel) => toContact(vessel, live[vessel.vesselId])),
+    [vessels, live],
+  );
+  const contactById = useMemo(
+    () => new Map(contacts.map((contact) => [contact.vesselId, contact])),
+    [contacts],
+  );
   const zoneList = Object.values(zones);
+
+  const scenario = state?.scenario ?? 'MULTI_VESSEL';
+  const definition = scenarios.find((entry) => entry.id === scenario);
+  const timeline = stateQuery.data?.timeline ?? definition?.timeline ?? [];
+
+  /* Default the contact selector to the scenario's lead — the unauthorized
+     contact for the intrusion scenarios, otherwise the first contact on the
+     plot. Keeps the panel pointed at the interesting vessel without a click. */
+  useEffect(() => {
+    if (selectedVesselId && contactById.has(selectedVesselId)) return;
+    const lead =
+      contacts.find((c) => c.authorizationStatus === 'UNAUTHORIZED') ?? contacts[0];
+    if (lead) setSelectedVesselId(lead.vesselId);
+  }, [contacts, contactById, selectedVesselId]);
+
+  const selected = contactById.get(selectedVesselId);
 
   const run = async (label: string, action: () => Promise<unknown>, success: string) => {
     if (!canOperate) {
@@ -100,6 +197,15 @@ export function SimulationPage() {
     } finally {
       setBusy(null);
     }
+  };
+
+  const stageScenario = async (id: SimulationScenario) => {
+    const name = scenarios.find((entry) => entry.id === id)?.name ?? id;
+    await run(
+      'scenario',
+      () => api.simulation.scenario(id),
+      `${name} staged — fleet moved to its start line`,
+    );
   };
 
   const inject = async () => {
@@ -129,6 +235,55 @@ export function SimulationPage() {
   const isRunning = state?.status === 'RUNNING';
   const isPaused = state?.status === 'PAUSED';
 
+  /* ── Timeline progress, derived from live engine output ──────────────── */
+
+  const underWay = routes.filter((route) => !route.held).length;
+  const converging = contacts.filter(
+    (c) => c.zoneState === 'APPROACHING' || c.zoneState === 'INSIDE',
+  ).length;
+  const intrusionAlerts = alerts.filter((a) => a.alertType === 'UNAUTHORIZED_ENTRY');
+  const criticalAlert = intrusionAlerts.some((a) => a.severity === 'CRITICAL');
+  const leadIncident = incidents.find((incident) => incident.vesselId === selectedVesselId);
+
+  const stageReached = (stage: TimelineStage): boolean => {
+    const verdict = selected?.verdict ?? 'NORMAL';
+    const zoneState = selected?.zoneState ?? 'OUTSIDE';
+    const ticks = state?.ticks ?? 0;
+
+    switch (stage.key) {
+      case 'OPEN_SEA':
+        return ticks > 0;
+      case 'NORMAL':
+        return ticks > 2;
+      case 'APPROACHING':
+        return verdict === 'WARNING' || zoneState === 'APPROACHING' || zoneState === 'INSIDE';
+      case 'BOUNDARY':
+        return zoneState === 'INSIDE';
+      case 'INTRUSION':
+        return verdict === 'INTRUSION' || intrusionAlerts.length > 0;
+      case 'ALERT':
+        return criticalAlert || intrusionAlerts.length > 0;
+      case 'INCIDENT':
+        return incidents.length > 0 || Boolean(leadIncident);
+      case 'PATROL_LOOP':
+        return ticks > 30;
+      case 'HOLDING':
+        return zoneState === 'APPROACHING' && (selected?.speed ?? 99) < 4;
+      case 'WITHDRAWAL':
+        return zoneState === 'OUTSIDE' && ticks > 30 && verdict === 'NORMAL';
+      case 'MULTIPLE_CONTACTS':
+        return underWay >= 3;
+      case 'CONVERGING':
+        return converging >= 2;
+      case 'OFFLINE':
+        return contacts.some((c) => c.status === 'OFFLINE');
+      default:
+        return false;
+    }
+  };
+
+  const firstOpenIndex = timeline.findIndex((stage) => !stageReached(stage));
+
   return (
     <div className="space-y-4 p-4">
       {/* ══ Status KPIs ═════════════════════════════════════════════════ */}
@@ -147,7 +302,7 @@ export function SimulationPage() {
           icon={<Zap className="h-4 w-4" />}
           tone="warning"
         />
-        <StatCard label="Vessels driven" value={formatNumber(state?.trackedVessels ?? 0)} hint="Simulated contacts" icon={<Anchor className="h-4 w-4" />} />
+        <StatCard label="Contacts under way" value={formatNumber(underWay)} hint={`${contacts.length} on the plot`} icon={<Anchor className="h-4 w-4" />} />
         <StatCard
           label="Alerts generated"
           value={formatNumber(state?.alertsGenerated ?? 0)}
@@ -165,17 +320,152 @@ export function SimulationPage() {
       </div>
 
       <div className="grid gap-4 xl:grid-cols-3">
-        {/* ══ Controls ═════════════════════════════════════════════════ */}
+        {/* ══ Scenario + controls ══════════════════════════════════════ */}
         <Card className="xl:col-span-2">
           <CardHeader
             title="Simulation control"
-            subtitle="Drive the simulated GNSS feed that feeds the geofencing engine"
+            subtitle="Stage a demonstration scenario, then drive the simulated GNSS feed"
             icon={<Waves className="h-4 w-4" />}
             action={<Badge className={STATUS_STYLE[state?.status ?? 'IDLE']}>{state?.status ?? 'IDLE'}</Badge>}
           />
 
           <div className="space-y-4 p-4">
-            <div>
+            {/* Scenario selector */}
+            <div className="grid gap-3 lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
+              <div>
+                <Field label="Scenario">
+                  <Select
+                    value={scenario}
+                    disabled={!canOperate || busy === 'scenario'}
+                    onChange={(event) => void stageScenario(event.target.value as SimulationScenario)}
+                  >
+                    {scenarios.length ? (
+                      scenarios.map((entry) => (
+                        <option key={entry.id} value={entry.id}>
+                          {entry.name}
+                        </option>
+                      ))
+                    ) : (
+                      <option value={scenario}>{state?.scenarioName ?? scenario}</option>
+                    )}
+                  </Select>
+                </Field>
+                <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500">
+                  {definition?.summary ??
+                    'Staging a scenario moves the participating contacts to the head of their assigned sea lane and clears the geofence memory.'}
+                </p>
+                {busy === 'scenario' ? (
+                  <p className="mt-1.5 flex items-center gap-1.5 text-[11px] font-medium text-brand-700">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    Staging fleet…
+                  </p>
+                ) : null}
+              </div>
+
+              {/* Timeline */}
+              <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+                <SectionLabel className="mb-2">Demonstration timeline</SectionLabel>
+                {timeline.length ? (
+                  <ol className="space-y-1.5">
+                    {timeline.map((stage, index) => {
+                      const reached = stageReached(stage);
+                      const isNext = index === firstOpenIndex;
+                      return (
+                        <li key={stage.key} className="flex gap-2.5">
+                          <span className="mt-0.5 shrink-0">
+                            {reached ? (
+                              <Check className="h-3.5 w-3.5 text-emerald-600" />
+                            ) : isNext ? (
+                              <span className="block h-3.5 w-3.5 rounded-full border-2 border-brand-500 bg-white" />
+                            ) : (
+                              <Circle className="h-3.5 w-3.5 text-slate-300" />
+                            )}
+                          </span>
+                          <span className="min-w-0">
+                            <span
+                              className={cn(
+                                'block text-[11px] font-semibold',
+                                reached ? 'text-slate-800' : isNext ? 'text-brand-700' : 'text-slate-400',
+                              )}
+                            >
+                              {stage.label}
+                            </span>
+                            <span className="block text-[10px] leading-snug text-slate-500">
+                              {stage.detail}
+                            </span>
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                ) : (
+                  <p className="text-[11px] text-slate-500">
+                    Start the engine to begin the timeline.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Vessel selector + live position */}
+            <div className="grid gap-3 lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
+              <div>
+                <Field label="Contact">
+                  <Select
+                    value={selectedVesselId}
+                    onChange={(event) => setSelectedVesselId(event.target.value)}
+                  >
+                    {contacts.map((contact) => (
+                      <option key={contact.vesselId} value={contact.vesselId}>
+                        {contact.vesselCode} — {contact.name}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500">
+                  The timeline tracks this contact's own geofence verdict.
+                </p>
+              </div>
+
+              <div className="rounded-lg border border-slate-200 bg-white p-3">
+                <SectionLabel className="mb-2">Current position</SectionLabel>
+                {selected ? (
+                  <dl className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3">
+                    <PositionField label="Latitude" value={formatCoord(selected.latitude, 'lat')} />
+                    <PositionField label="Longitude" value={formatCoord(selected.longitude, 'lng')} />
+                    <PositionField label="Speed" value={formatKnots(selected.speed)} hint={formatSpeed(selected.speed)} />
+                    <PositionField label="Heading" value={formatHeading(selected.direction)} />
+                    <PositionField
+                      label="Status"
+                      value={selected.status}
+                      tone={selected.status === 'INTRUSION' ? 'danger' : selected.status === 'WARNING' ? 'warning' : undefined}
+                    />
+                    <PositionField
+                      label="Authorization"
+                      value={selected.authorizationStatus}
+                      tone={selected.authorizationStatus === 'UNAUTHORIZED' ? 'danger' : 'success'}
+                    />
+                    <PositionField
+                      label="Nearest zone"
+                      value={selected.nearestZone ?? 'None in range'}
+                      span
+                    />
+                    <PositionField
+                      label="Distance to zone"
+                      value={selected.nearestZone ? formatDistance(selected.nearestDistanceMeters) : '—'}
+                    />
+                    <PositionField
+                      label="Verdict"
+                      value={selected.verdict.replace(/_/g, ' ')}
+                      tone={selected.verdict === 'INTRUSION' ? 'danger' : selected.verdict === 'WARNING' ? 'warning' : undefined}
+                    />
+                  </dl>
+                ) : (
+                  <p className="text-[11px] text-slate-500">No contact selected.</p>
+                )}
+              </div>
+            </div>
+
+            <div className="border-t border-slate-200 pt-4">
               <SectionLabel className="mb-2">Transport</SectionLabel>
               <div className="flex flex-wrap gap-2">
                 <Button
@@ -285,9 +575,9 @@ export function SimulationPage() {
             <Field label="Vessel">
               <Select value={injectVesselId} onChange={(event) => setInjectVesselId(event.target.value)}>
                 <option value="">Select a vessel…</option>
-                {vesselList.map((vessel) => (
-                  <option key={vessel.vesselId} value={vessel.vesselId}>
-                    {vessel.name} — {vessel.vesselId}
+                {contacts.map((contact) => (
+                  <option key={contact.vesselId} value={contact.vesselId}>
+                    {contact.vesselCode} — {contact.name}
                   </option>
                 ))}
               </Select>
@@ -340,14 +630,15 @@ export function SimulationPage() {
       <Card>
         <CardHeader
           title="Simulated routes"
-          subtitle="Behaviour assigned per vessel — intruders deliberately converge on restricted zones"
+          subtitle="Behaviour assigned per contact under the active scenario — every lane is a validated offshore sea lane"
           icon={<Compass className="h-4 w-4" />}
         />
         <div className="panel-scroll max-h-[420px]">
           <table className="data-table">
             <thead>
               <tr>
-                <th>Vessel</th>
+                <th>Contact</th>
+                <th>Assigned lane</th>
                 <th>Behaviour</th>
                 <th>Target zone</th>
                 <th className="text-right">Speed</th>
@@ -358,22 +649,45 @@ export function SimulationPage() {
             <tbody>
               {routes.length ? (
                 routes.map((route) => {
-                  const vessel = vessels[route.vesselId];
+                  const vessel = contactById.get(route.vesselId);
                   const frame = vessel;
                   return (
-                    <tr key={route.vesselId}>
+                    <tr key={route.vesselId} className={cn(route.held && 'opacity-60')}>
                       <td>
                         <div className="min-w-0">
                           <p className="truncate text-[13px] font-medium text-slate-800">
-                            {vessel?.name ?? route.vesselId}
+                            <span className="font-mono">{vessel?.vesselCode ?? route.vesselId}</span>
+                            {' — '}
+                            {vessel?.name ?? 'Unknown contact'}
                           </p>
-                          <p className="truncate font-mono text-[10px] text-slate-400">{route.vesselId}</p>
+                          <p className="truncate text-[10px] text-slate-400">
+                            {vessel?.vesselType ? vessel.vesselType.replace(/_/g, ' ').toLowerCase() : '—'}
+                          </p>
                         </div>
                       </td>
+                      <td className="text-xs text-slate-600">
+                        {route.held ? (
+                          <span className="text-slate-400">Held at berth</span>
+                        ) : (
+                          <>
+                            {route.routeName ?? '—'}
+                            {typeof route.waypointIndex === 'number' ? (
+                              <span className="ml-1 text-[10px] text-slate-400">
+                                leg {route.waypointIndex + 1}
+                                {route.waypointCount ? `/${route.waypointCount}` : ''}
+                              </span>
+                            ) : null}
+                          </>
+                        )}
+                      </td>
                       <td>
-                        <Badge className={BEHAVIOUR_STYLE[route.behavior] ?? 'bg-slate-100 text-slate-600'}>
-                          {route.behavior}
-                        </Badge>
+                        {route.held ? (
+                          <Badge className="bg-slate-100 text-slate-500">STANDBY</Badge>
+                        ) : (
+                          <Badge className={BEHAVIOUR_STYLE[route.behavior] ?? 'bg-slate-100 text-slate-600'}>
+                            {route.behavior}
+                          </Badge>
+                        )}
                       </td>
                       <td className="text-xs text-slate-600">
                         {route.targetZoneId
@@ -398,7 +712,7 @@ export function SimulationPage() {
                 })
               ) : (
                 <tr>
-                  <td colSpan={6} className="py-8 text-center text-xs text-slate-500">
+                  <td colSpan={7} className="py-8 text-center text-xs text-slate-500">
                     No routes yet — start the simulation to assign behaviours.
                   </td>
                 </tr>
@@ -441,8 +755,8 @@ export function SimulationPage() {
         message={
           <div className="space-y-3">
             <p>
-              Every simulated vessel is repositioned at random and the geofence engine state is cleared.
-              Track history is deleted.
+              Every participating contact is returned to the head of its assigned sea lane and the geofence
+              engine state is cleared. Track history is deleted.
             </p>
             <Toggle
               checked={purgeOnReset}
@@ -456,6 +770,36 @@ export function SimulationPage() {
         confirmLabel="Reset simulation"
         loading={busy === 'reset'}
       />
+    </div>
+  );
+}
+
+function PositionField({
+  label,
+  value,
+  hint,
+  tone,
+  span,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  tone?: 'danger' | 'warning' | 'success';
+  span?: boolean;
+}) {
+  const toneClass =
+    tone === 'danger'
+      ? 'text-rose-700'
+      : tone === 'warning'
+        ? 'text-amber-700'
+        : tone === 'success'
+          ? 'text-emerald-700'
+          : 'text-slate-800';
+  return (
+    <div className={cn('min-w-0', span && 'col-span-2 sm:col-span-3')}>
+      <dt className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{label}</dt>
+      <dd className={cn('tnum truncate text-[13px] font-semibold', toneClass)}>{value}</dd>
+      {hint ? <dd className="text-[10px] text-slate-400">{hint}</dd> : null}
     </div>
   );
 }

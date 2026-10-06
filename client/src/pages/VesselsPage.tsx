@@ -205,7 +205,9 @@ export function VesselsPage() {
       sortValue: (row) => row.name,
       render: (row) => (
         <div className="min-w-0">
-          <p className="truncate text-[13px] font-medium text-slate-800">{row.name}</p>
+          <p className="truncate text-[13px] font-medium text-slate-800">
+            <span className="font-mono">{row.vesselCode ?? row.vesselId}</span> — {row.name}
+          </p>
           <p className="truncate text-[10px] text-slate-400">{row.registrationNumber}</p>
         </div>
       ),
